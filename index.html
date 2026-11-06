@@ -2085,7 +2085,7 @@
         </div>
         <div class="row2">
           <select id="max-lead-status"></select>
-          <select id="max-lead-stage"><option>Ты</option><option>SDR-менеджер</option><option>Представитель</option></select>
+          <select id="max-lead-stage"><option>SDR-менеджер</option><option>Букинг</option><option>Представитель</option></select>
           <select id="max-lead-listsource" title="Чей список: считается ли Wrong ICP этого лида на сотрудника"><option value="sdr">Ресёрч SDR</option><option value="nastya">Список от Анастасии</option></select>
           <select id="max-lead-touch" title="На какое наше сообщение ответил лид"><option value="">Касание (на какое ответил)…</option></select>
         </div>
@@ -7610,7 +7610,7 @@ var MAX_STATUSES = [
   {key:'Call scheduled', label:'Call scheduled', cls:'st-green'},
   {key:'Call done', label:'Call done', cls:'st-darkgreen'}
 ];
-var MAX_STAGES = ['Ты', 'SDR-менеджер', 'Представитель'];
+var MAX_STAGES = ['SDR-менеджер', 'Букинг', 'Представитель'];
 var TOUCH_OPTIONS = ['Connection Request', 'M1', 'M2', 'M3', 'M4', 'M5'];
 var AUTOMATION_ACCOUNTS = ['Leonid Khlibov', 'Maria Khlibova', 'Noel Boeva', 'Anis Souguir'];
 function maxStatusCls(key){ var s = MAX_STATUSES.filter(function(x){return x.key===key;})[0]; return s ? s.cls : ''; }
@@ -8620,7 +8620,8 @@ function renderMaxLeadsView(){
         if(lead.assignee) maxNotify(lead.assignee, 'status', maxPersonName(maxMe())+' обновил(а) статус: '+(lead.companyName || '')+(lead.contactName ? ', '+lead.contactName : '')+' → '+statusSel.value, { leadId: lead.id });
       });
       var stageSel = document.createElement('select');
-      MAX_STAGES.forEach(function(s){ var o=document.createElement('option'); o.value=s; o.textContent=s; if(s===lead.stage) o.selected=true; stageSel.appendChild(o); });
+      var stageList = MAX_STAGES.slice(); if(lead.stage && stageList.indexOf(lead.stage) < 0) stageList.unshift(lead.stage); // старые значения (например «Ты») не теряем
+      stageList.forEach(function(s){ var o=document.createElement('option'); o.value=s; o.textContent=s; if(s===lead.stage) o.selected=true; stageSel.appendChild(o); });
       stageSel.addEventListener('change', function(){
         var todayStr2 = new Date().toISOString().slice(0,10);
         updateDoc(doc(db,'maxLeads',lead.id), touchLead({ stage: stageSel.value, stageChangedDate: todayStr2 }));
