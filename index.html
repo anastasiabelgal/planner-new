@@ -9059,7 +9059,7 @@ function initMaxImport(){
         var aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:''});
         aoa = aoa.filter(function(r){ return r.some(function(c){ return String(c).trim() !== ''; }); });
         if(aoa.length < 2){ alert('В файле нет строк с данными (нужна строка заголовков и хотя бы одна строка контактов).'); return; }
-        impState = { fileName: f.name, header: aoa[0].map(function(h){ return String(h).trim(); }), rows: aoa.slice(1), map: [] };
+        impState = { createNew:false, fileName: f.name, header: aoa[0].map(function(h){ return String(h).trim(); }), rows: aoa.slice(1), map: [] };
         impState.map = impState.header.map(impGuess);
         impRender();
       }catch(e){ console.error(e); alert('Не удалось прочитать файл: '+e.message); }
@@ -9115,11 +9115,18 @@ function impRender(){
     body.appendChild(warn); return;
   }
   var res = impBuild(), recs = res.recs;
+  if(!st.createNew) recs.forEach(function(r){ if(r.action === 'new') r.action = 'nf'; }); // режим «только дополнять»: не найденные пропускаем
+  var nNf = recs.filter(function(r){ return r.action === 'nf'; }).length;
   var nNew = recs.filter(function(r){ return r.action === 'new'; }).length;
   var nUpd = recs.filter(function(r){ return r.action === 'upd'; }).length;
   var nSame = recs.filter(function(r){ return r.action === 'same'; }).length;
   var sum = document.createElement('div'); sum.style.cssText = 'margin-top:8px;font-size:12px;font-weight:600;';
-  sum.textContent = 'Новых лидов: '+nNew+' · дополнится существующих: '+nUpd+' · без изменений: '+nSame+' · пропущено строк без компании/имени: '+res.skipped;
+  sum.textContent = (st.createNew ? 'Новых лидов: '+nNew+' · ' : 'Не найдено в базе (будут пропущены): '+nNf+' · ')+'дополнится существующих: '+nUpd+' · без изменений: '+nSame+' · пропущено строк без компании/имени: '+res.skipped;
+  var cbWrap = document.createElement('label'); cbWrap.style.cssText = 'display:block;margin-top:8px;font-size:12px;';
+  var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = st.createNew; cb.style.marginRight = '6px';
+  cb.addEventListener('change', function(){ st.createNew = cb.checked; impRender(); });
+  cbWrap.appendChild(cb); cbWrap.appendChild(document.createTextNode('Создавать новые лиды для тех, кого нет в базе (по умолчанию выключено: только дополняю существующих)'));
+  body.appendChild(cbWrap);
   body.appendChild(sum);
   var tbl = document.createElement('table');
   var thead = document.createElement('tr');
@@ -9129,7 +9136,7 @@ function impRender(){
     var tr = document.createElement('tr');
     var td0 = document.createElement('td');
     td0.className = r.action === 'new' ? 'imp-new' : (r.action === 'upd' ? 'imp-upd' : 'imp-skip');
-    td0.textContent = r.action === 'new' ? 'Новый лид' : (r.action === 'upd' ? 'Дополнить: '+Object.keys(r.upd).length+' п.' : 'Уже есть');
+    td0.textContent = r.action === 'new' ? 'Новый лид' : (r.action === 'upd' ? 'Дополнить: '+Object.keys(r.upd).length+' п.' : (r.action === 'nf' ? 'Не найден — пропущу' : 'Уже есть, нечего добавить'));
     tr.appendChild(td0);
     [r.company, r.name, r.fields.position, r.fields.workEmail, r.fields.personalEmail, r.fields.workPhone, r.fields.personalPhone, r.fields.whatsapp].forEach(function(v){ var td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
     tbl.appendChild(tr);
