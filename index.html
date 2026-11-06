@@ -621,6 +621,18 @@
   /* Max leads */
   .max-company-group{margin-bottom:18px;}
   .max-company-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:13px;margin-bottom:8px;color:var(--navy);cursor:pointer;}
+  .mct-chip{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:var(--panel-soft);color:var(--text);border:1px solid var(--border);vertical-align:middle;}
+  .mct-chip.agency{background:rgba(239,155,61,.18);} .mct-chip.inhouse{background:rgba(63,174,127,.18);} .mct-chip.holder{background:rgba(0,97,255,.12);}
+  .max-ch-bar{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 8px;}
+  .max-ch-plate{flex:1 1 170px;min-width:160px;border:1px solid var(--border);border-radius:10px;padding:6px 8px;background:var(--panel-soft);font-size:11px;}
+  .max-ch-plate.on{outline:2px solid var(--navy);}
+  .max-ch-plate.ch-green{background:rgba(63,174,127,.16);} .max-ch-plate.ch-red{background:rgba(221,92,86,.16);} .max-ch-plate.ch-blue{background:rgba(0,97,255,.10);}
+  .max-ch-plate.ch-warn{background:rgba(239,200,61,.28);}
+  .max-ch-head{display:flex;justify-content:space-between;align-items:center;gap:6px;font-weight:800;cursor:pointer;margin-bottom:4px;}
+  .max-ch-plate select,.max-ch-plate input[type=date]{font-size:10.5px;padding:2px 4px;width:100%;margin-top:3px;}
+  .max-ch-note{margin-top:4px;font-size:10.5px;color:var(--muted);} .max-ch-warn{margin-top:4px;font-size:10.5px;font-weight:700;color:#8a6a00;}
+  .fu-next{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;}
+  .fu-ch{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:var(--panel-soft);border:1px solid var(--border);}
   .max-company-title:hover{text-decoration:underline;}
   [data-theme="dark"] .max-company-title{color:var(--sky);}
   .max-company-field{margin-bottom:10px;}
@@ -8079,6 +8091,16 @@ function renderMaxReferralsList(leadsBase){
 
 /* ---------- MAX COMPANIES (профиль компании, отдельная карточка) ---------- */
 var maxCompanies = [];
+// Настройки вне кода (список «кто ведёт» и т.п.): privateContent/config, читают Настя, Макс и Эвелина
+var maxConfig = { holders: [] };
+var maxConfigLoaded = false;
+async function loadMaxConfig(){
+  if(maxConfigLoaded) return; maxConfigLoaded = true;
+  try{
+    var sn = await getDoc(doc(db,'privateContent','config'));
+    if(sn.exists() && sn.data().json){ var c = JSON.parse(sn.data().json); if(c && Array.isArray(c.holders)) maxConfig.holders = c.holders; }
+  }catch(e){ console.error('config', e); }
+}
 var unsubMaxCompanies = null;
 var maxCompanyEditing = false;
 var maxCompanyOverlayName = null;
@@ -8090,6 +8112,7 @@ var COMPANY_FIELD_DEFS = [
 ];
 
 function subscribeMaxCompanies(){
+  loadMaxConfig();
   if(unsubMaxCompanies){ unsubMaxCompanies(); unsubMaxCompanies=null; }
   if(unsubAutostats){ unsubAutostats(); unsubAutostats=null; }
   unsubMaxCompanies = onSnapshot(collection(db,'maxCompanies'), function(snap){
@@ -8137,6 +8160,10 @@ function renderMaxCompanyOverlay(){
     modelWrap.innerHTML = '<div class="mcf-label">Модель работы</div><div class="mcf-val">'+modelText+'</div>';
     content.appendChild(modelWrap);
 
+    var holderView = document.createElement('div'); holderView.className='max-company-field';
+    holderView.innerHTML = '<div class="mcf-label">Кто сейчас ведёт</div><div class="mcf-val">'+(profile.holder||'—')+'</div>';
+    content.appendChild(holderView);
+
     var notesWrap = document.createElement('div'); notesWrap.className='max-company-field';
     notesWrap.innerHTML = '<div class="mcf-label">Заметки</div><div class="mcf-val">'+(profile.notes||'—')+'</div>';
     content.appendChild(notesWrap);
@@ -8179,6 +8206,15 @@ function renderMaxCompanyOverlay(){
     modelWrap2.appendChild(modelLabel); modelWrap2.appendChild(modelSel); modelWrap2.appendChild(agencyInput); modelWrap2.appendChild(inhouseInput);
     content.appendChild(modelWrap2);
 
+    var holderWrap = document.createElement('div'); holderWrap.className='max-company-field';
+    var holderLabel = document.createElement('div'); holderLabel.className='mcf-label'; holderLabel.textContent='Кто сейчас ведёт (ответственный за передачу)';
+    var holderInput = document.createElement('input'); holderInput.type='text'; holderInput.value = profile.holder||''; holderInput.setAttribute('list','max-holder-list');
+    holderInput.placeholder = 'Например: SDR, продажи, клиент';
+    var holderList = document.createElement('datalist'); holderList.id = 'max-holder-list';
+    (maxConfig.holders || []).forEach(function(h){ var o = document.createElement('option'); o.value = h; holderList.appendChild(o); });
+    holderWrap.appendChild(holderLabel); holderWrap.appendChild(holderInput); holderWrap.appendChild(holderList);
+    content.appendChild(holderWrap);
+
     var notesWrap2 = document.createElement('div'); notesWrap2.className='max-company-field';
     var notesLabel = document.createElement('div'); notesLabel.className='mcf-label'; notesLabel.textContent='Заметки';
     var notesInput = document.createElement('textarea'); notesInput.style.height='60px'; notesInput.style.resize='vertical'; notesInput.value = profile.notes||'';
@@ -8188,7 +8224,7 @@ function renderMaxCompanyOverlay(){
     var actionsRow = document.createElement('div'); actionsRow.style.cssText='display:flex;gap:8px;margin-top:12px;';
     var saveBtn = document.createElement('button'); saveBtn.className='add-card-submit'; saveBtn.style.cssText='flex:0 0 auto;width:auto;max-width:100px;'; saveBtn.textContent='✓ Сохранить';
     saveBtn.addEventListener('click', function(){
-      var payload = { name:name, workModel:modelSel.value, agencyPartner:agencyInput.value.trim(), inhouseNote:inhouseInput.value.trim(), notes:notesInput.value.trim(), updatedAt: serverTimestamp() };
+      var payload = { name:name, workModel:modelSel.value, agencyPartner:agencyInput.value.trim(), inhouseNote:inhouseInput.value.trim(), holder:holderInput.value.trim(), notes:notesInput.value.trim(), updatedAt: serverTimestamp() };
       COMPANY_FIELD_DEFS.forEach(function(f){ payload[f[0]] = inputs[f[0]].value.trim(); });
       var existing = getMaxCompanyProfile(name);
       if(existing){
@@ -8394,6 +8430,15 @@ function renderMaxLeadsView(){
     var title = document.createElement('div'); title.className = 'max-company-title'; title.textContent = companyName;
     title.title = 'Клик — открыть карточку компании';
     title.addEventListener('click', function(){ openMaxCompanyCard(companyName); });
+    var cprof = getMaxCompanyProfile(companyName);
+    if(cprof){
+      if(cprof.workModel){
+        var mchip = document.createElement('span'); mchip.className = 'mct-chip '+(cprof.workModel === 'Агентство' ? 'agency' : 'inhouse');
+        mchip.textContent = cprof.workModel + (cprof.workModel === 'Агентство' && cprof.agencyPartner ? ': '+cprof.agencyPartner : (cprof.workModel === 'Инхаус' && cprof.inhouseNote ? ': '+cprof.inhouseNote : ''));
+        title.appendChild(mchip);
+      }
+      if(cprof.holder){ var hchip = document.createElement('span'); hchip.className = 'mct-chip holder'; hchip.textContent = 'Ведёт: '+cprof.holder; title.appendChild(hchip); }
+    }
     groupDiv.appendChild(title);
 
     group.forEach(function(lead){
@@ -8617,9 +8662,48 @@ function renderMaxLeadsView(){
       }
       main.appendChild(datesRow);
 
+      // Каналы: LinkedIn / почта / WhatsApp. Все прежние сообщения относятся к LinkedIn
+      var activeCh = maxActiveCh[lead.id] || 'linkedin';
+      var chBar = document.createElement('div'); chBar.className='max-ch-bar';
+      MAX_CHANNELS.forEach(function(c){
+        var cs = mrChannelStats(lead, c.key);
+        var chSt = (lead.channelStatus || {})[c.key] || '';
+        var stDef = CH_STATUSES.filter(function(x){ return x.key === chSt; })[0];
+        var plate = document.createElement('div');
+        plate.className = 'max-ch-plate'+(c.key === activeCh ? ' on' : '')+(stDef && stDef.cls ? ' '+stDef.cls : '')+(cs.stale ? ' ch-warn' : '');
+        var head = document.createElement('div'); head.className = 'max-ch-head';
+        var cnt = (lead.messages || []).filter(function(m){ return mrChannel(m) === c.key; }).length;
+        head.textContent = c.label+(cnt ? ' · '+cnt : '');
+        head.title = 'Показать сообщения этого канала';
+        head.addEventListener('click', function(e){ e.stopPropagation(); maxActiveCh[lead.id] = c.key; renderMaxLeadsView(); });
+        var chSel = document.createElement('select'); chSel.title = 'Статус этого канала (ставится вручную)';
+        CH_STATUSES.forEach(function(x){ var o = document.createElement('option'); o.value = x.key; o.textContent = x.label; chSel.appendChild(o); });
+        chSel.value = chSt;
+        chSel.addEventListener('click', function(e){ e.stopPropagation(); });
+        chSel.addEventListener('change', function(){ var f = {}; f['channelStatus.'+c.key] = chSel.value; updateDoc(doc(db,'maxLeads',lead.id), touchLead(f)); });
+        var dLab = document.createElement('div'); dLab.className = 'max-ch-note'; dLab.textContent = 'Связаться до';
+        var dIn = document.createElement('input'); dIn.type = 'date'; dIn.value = cs.open ? (cs.open.date || '') : '';
+        dIn.title = 'Дата следующего follow-up в этом канале';
+        dIn.addEventListener('click', function(e){ e.stopPropagation(); });
+        dIn.addEventListener('change', function(){
+          if(dIn.value){ mrUpsertChannel(lead, c.key, dIn.value, cs.done + 1); }
+          else if(cs.open){ var oid = cs.open.id; softDeleteMaxReminder(cs.open).then(function(){ mrSetLeadNext(lead.id, mrOtherOpenDates(lead.id, oid)); }); }
+        });
+        var note = document.createElement('div'); note.className = 'max-ch-note'; note.textContent = 'Follow-up без ответа: '+cs.done;
+        plate.appendChild(head); plate.appendChild(chSel); plate.appendChild(dLab); plate.appendChild(dIn); plate.appendChild(note);
+        if(cs.stale){
+          var sug = mrSuggestChannel(lead, c.key);
+          var warn = document.createElement('div'); warn.className = 'max-ch-warn';
+          warn.textContent = cs.done+' follow-up без ответа'+(sug ? ': попробуй '+mrChLabel(sug) : ': попробуй другой канал');
+          plate.appendChild(warn);
+        }
+        chBar.appendChild(plate);
+      });
+      main.appendChild(chBar);
+
       // Сообщения — отдельный лог, не одна перезаписываемая заметка
       var messagesWrap = document.createElement('div'); messagesWrap.className='max-messages-log';
-      var msgTitle = document.createElement('div'); msgTitle.className='mlc-item'; msgTitle.style.cssText='font-weight:700;margin-bottom:4px;'; msgTitle.textContent='Сообщения';
+      var msgTitle = document.createElement('div'); msgTitle.className='mlc-item'; msgTitle.style.cssText='font-weight:700;margin-bottom:4px;'; msgTitle.textContent='Сообщения · '+mrChLabel(activeCh);
       messagesWrap.appendChild(msgTitle);
       // Редактор сообщения: дата, статус этого ответа, текст. Статус сообщения идёт в аналитику ответов по неделям
       var buildMsgEditor = function(msg){
@@ -8638,15 +8722,19 @@ function renderMaxLeadsView(){
           if(!date){ alert('Укажи дату сообщения'); return; }
           var newMessages;
           if(msg){ newMessages = (lead.messages||[]).map(function(m){ return m.id===msg.id ? Object.assign({}, m, { text:text, date:date, status:stSel.value }) : m; }); }
-          else { newMessages = (lead.messages||[]).concat([{ id:'msg'+Math.random().toString(36).slice(2,8), text:text, date:date, status:stSel.value, by:(currentUser && currentUser.email) || '' }]); }
+          else { newMessages = (lead.messages||[]).concat([{ id:'msg'+Math.random().toString(36).slice(2,8), text:text, date:date, status:stSel.value, channel:activeCh, by:(currentUser && currentUser.email) || '' }]); }
           delete maxEditingMsgs[key];
           updateDoc(doc(db,'maxLeads',lead.id), touchLead({ messages: newMessages }));
+          // Новый ответ в канале: следующий follow-up в этом же канале через три рабочих дня после даты ответа
+          if(!msg && MAX_TERMINAL.indexOf(stSel.value) === -1 && MAX_TERMINAL.indexOf(lead.status) === -1){
+            mrUpsertChannel(lead, activeCh, mrAddWorkdays(date, FU_GAP), mrChannelStats(lead, activeCh).done + 1);
+          }
         });
         cancelB.addEventListener('click', function(e){ e.stopPropagation(); delete maxEditingMsgs[key]; renderMaxLeadsView(); });
         [dIn, stSel, tIn, saveB, cancelB].forEach(function(x){ row.appendChild(x); });
         return row;
       };
-      (lead.messages||[]).slice().sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); }).forEach(function(msg){
+      (lead.messages||[]).filter(function(m){ return mrChannel(m) === activeCh; }).sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); }).forEach(function(msg){
         if(maxEditingMsgs[lead.id+'_'+msg.id]){ messagesWrap.appendChild(buildMsgEditor(msg)); return; }
         var msgRow = document.createElement('div'); msgRow.className='max-msg-row';
         var msgDateSpan = document.createElement('span'); msgDateSpan.className='max-msg-date'; msgDateSpan.textContent = msg.date||'';
@@ -8674,7 +8762,7 @@ function renderMaxLeadsView(){
         messagesWrap.appendChild(msgRow);
       });
       if(maxEditingMsgs[lead.id+'_new']) messagesWrap.appendChild(buildMsgEditor(null));
-      var addMsgBtn = document.createElement('button'); addMsgBtn.className='max-add-contact-btn'; addMsgBtn.textContent = '+ Сообщение';
+      var addMsgBtn = document.createElement('button'); addMsgBtn.className='max-add-contact-btn'; addMsgBtn.textContent = '+ Сообщение ('+mrChLabel(activeCh)+')';
       addMsgBtn.addEventListener('click', function(e){
         e.stopPropagation();
         if(!(lead.messages||[]).length && !lead.touchpoint && !confirm('Вверху карточки не выбрано «Касание…» (на какое наше сообщение ответил лид). Без этого первый ответ не попадёт в аналитику по касаниям. Всё равно добавить?')) return;
@@ -8853,6 +8941,10 @@ function initMaxLeads(){
       scheduledDate:(status === 'Call scheduled' ? todayStr2 : ''), meetingDate:'',
       agencyName:'', agencyInfo:'',
       otherContacts:[], order:sameCompanyCount, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+    }).then(function(ref){
+      if(initialMessages.length && MAX_TERMINAL.indexOf(status) === -1){
+        mrUpsertChannel({ id:ref.id, contactName:name, companyName:company }, 'linkedin', mrAddWorkdays(firstReplyDate, FU_GAP), 1);
+      }
     });
     el('max-lead-company').value=''; el('max-lead-name').value=''; el('max-lead-position').value='';
     el('max-lead-sender').value=''; el('max-lead-campaign').value=''; el('max-lead-segment').value='';
@@ -8877,6 +8969,85 @@ var unsubMaxReminders = null;
 function mrToday(){ var d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function mrEvt(type, extra){
   return Object.assign({ t:new Date().toISOString(), d:mrToday(), by:(currentUser && currentUser.email) || '', type:type }, extra || {});
+}
+
+/* ---------- Каналы (LinkedIn, почта, WhatsApp) и follow-up по рабочим дням ---------- */
+var MAX_CHANNELS = [{key:'linkedin',label:'LinkedIn'},{key:'email',label:'Почта'},{key:'whatsapp',label:'WhatsApp'}];
+var CH_STATUSES = [{key:'',label:'Статус канала'},{key:'unread',label:'Без прочтения',cls:''},{key:'noreply',label:'Нет ответа',cls:'ch-red'},{key:'replying',label:'Отвечает',cls:'ch-green'},{key:'tocall',label:'Вывод на звонок',cls:'ch-blue'}];
+var FU_GAP = 4;    // следующий follow-up на 4-й рабочий день: между ними три рабочих дня (сб и вс не считаются)
+var FU_LIMIT = 3;  // после стольких follow-up без ответа предлагаем сменить канал
+var MAX_TERMINAL = ['Not interested','Irrelevant','Call done'];
+var maxActiveCh = {};  // выбранный канал в карточке лида: leadId -> key
+function mrChannel(x){ return (x && x.channel) || 'linkedin'; } // старые сообщения и напоминания считаются LinkedIn
+function mrChLabel(k){ var c = MAX_CHANNELS.filter(function(x){ return x.key === k; })[0]; return c ? c.label : k; }
+function mrDateStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function mrAddWorkdays(dateStr, n){
+  var p = String(dateStr).split('-'), d = new Date(+p[0], +p[1]-1, +p[2]), left = n;
+  while(left > 0){ d.setDate(d.getDate()+1); var w = d.getDay(); if(w !== 0 && w !== 6) left--; }
+  return mrDateStr(d);
+}
+function mrLead(id){ return maxLeads.filter(function(l){ return l.id === id; })[0] || null; }
+function mrOpenFor(leadId, ch){ return maxReminders.filter(function(r){ return r.leadId === leadId && !r.done && mrChannel(r) === ch; }).sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); })[0] || null; }
+// Сколько follow-up сделано в канале после последнего ответа контакта в этом канале
+function mrChannelStats(lead, ch){
+  var last = '';
+  (lead.messages || []).forEach(function(m){ if(mrChannel(m) === ch && m.date && m.date > last) last = m.date; });
+  var done = maxReminders.filter(function(r){ return r.leadId === lead.id && mrChannel(r) === ch && r.done && (r.doneDate || '') > last; }).length;
+  return { last:last, done:done, stale: done >= FU_LIMIT, open: mrOpenFor(lead.id, ch) };
+}
+// В какой канал перейти, когда в этом нет ответа: сначала где «Отвечает», потом где писали последним, потом любой без трёх follow-up
+function mrSuggestChannel(lead, ch){
+  var cands = MAX_CHANNELS.filter(function(c){ return c.key !== ch; });
+  var st = lead.channelStatus || {};
+  var rep = cands.filter(function(c){ return st[c.key] === 'replying'; })[0];
+  if(rep) return rep.key;
+  var byMsg = cands.map(function(c){ return { k:c.key, d:mrChannelStats(lead, c.key).last }; }).filter(function(x){ return x.d; }).sort(function(a,b){ return b.d.localeCompare(a.d); })[0];
+  if(byMsg) return byMsg.k;
+  var fresh = cands.filter(function(c){ return !mrChannelStats(lead, c.key).stale; })[0];
+  return fresh ? fresh.key : '';
+}
+function mrSetLeadNext(leadId, dates){
+  var ds = dates.filter(Boolean).sort();
+  return updateDoc(doc(db,'maxLeads',leadId), touchLead({ nextContactDate: ds[0] || '' }));
+}
+function mrOtherOpenDates(leadId, exceptId){
+  return maxReminders.filter(function(r){ return r.leadId === leadId && !r.done && r.id !== exceptId; }).map(function(r){ return r.date; });
+}
+// Один открытый follow-up на канал: двигаем дату или создаём новый
+function mrUpsertChannel(lead, ch, date, followupNo){
+  var open = mrOpenFor(lead.id, ch), others;
+  if(open){
+    var patch = { date: date, channel: ch };
+    if(open.date !== date){
+      if(!open.origDate) patch.origDate = open.date;
+      patch.history = arrayUnion(mrEvt('date', { from: open.date || '', to: date }));
+    }
+    others = mrOtherOpenDates(lead.id, open.id).concat([date]);
+    return updateDoc(doc(db,'maxReminders',open.id), patch).then(function(){ return mrSetLeadNext(lead.id, others); });
+  }
+  others = mrOtherOpenDates(lead.id, null).concat([date]);
+  return addDoc(collection(db,'maxReminders'), {
+    name: lead.contactName || lead.companyName, note: 'Follow-up · '+mrChLabel(ch), date: date, origDate: date,
+    done: false, leadId: lead.id, channel: ch, followupNo: followupNo || 1, autoChannel: true,
+    authorEmail: (currentUser && currentUser.email) || '', createdAt: serverTimestamp(),
+    history: [mrEvt('created', { to: date })]
+  }).then(function(){ return mrSetLeadNext(lead.id, others); });
+}
+function mrNextFollowup(item){
+  var lead = mrLead(item.leadId); if(!lead){ alert('Лид не найден'); return; }
+  var ch = mrChannel(item), st = mrChannelStats(lead, ch);
+  if(st.done >= FU_LIMIT && !confirm('В канале «'+mrChLabel(ch)+'» уже '+st.done+' follow-up без ответа. Поставить ещё один через три рабочих дня? Отмена: не продлевать (лучше попробовать другой канал).')){
+    updateDoc(doc(db,'maxReminders',item.id), { fuDecision:'stop', history: arrayUnion(mrEvt('fu-stop')) });
+    mrSetLeadNext(lead.id, mrOtherOpenDates(lead.id, item.id));
+    return;
+  }
+  var date = mrAddWorkdays(mrToday(), FU_GAP);
+  updateDoc(doc(db,'maxReminders',item.id), { fuDecision:'next', history: arrayUnion(mrEvt('fu-next', { to: date })) });
+  mrUpsertChannel(lead, ch, date, st.done + 1);
+}
+function mrStopFollowup(item){
+  updateDoc(doc(db,'maxReminders',item.id), { fuDecision:'stop', history: arrayUnion(mrEvt('fu-stop')) });
+  if(item.leadId) mrSetLeadNext(item.leadId, mrOtherOpenDates(item.leadId, item.id));
 }
 
 function subscribeMaxReminders(){
@@ -8995,7 +9166,17 @@ function renderMaxFollowupDayDetail(){
 
     var name = document.createElement('span'); name.className='fu-name'; name.textContent = item.name || '(без имени)';
     top.appendChild(chk); top.appendChild(name);
+    if(item.leadId){ var chTag = document.createElement('span'); chTag.className='fu-ch'; chTag.textContent = mrChLabel(mrChannel(item)); top.appendChild(chTag); }
     row.appendChild(top);
+    if(item.done && item.leadId && !item.fuDecision && item.doneDate === mrToday()){
+      var ask = document.createElement('div'); ask.className='fu-next';
+      var askTxt = document.createElement('span'); askTxt.textContent = 'Что дальше?';
+      var nextB = document.createElement('button'); nextB.className='btn-secondary'; nextB.style.cssText='font-size:11px;height:26px;padding:0 10px;'; nextB.textContent='Следующий follow-up';
+      nextB.addEventListener('click', function(e){ e.stopPropagation(); mrNextFollowup(item); });
+      var stopB = document.createElement('button'); stopB.className='btn-secondary'; stopB.style.cssText='font-size:11px;height:26px;padding:0 10px;'; stopB.textContent='Прекратить follow-up';
+      stopB.addEventListener('click', function(e){ e.stopPropagation(); mrStopFollowup(item); });
+      ask.appendChild(askTxt); ask.appendChild(nextB); ask.appendChild(stopB); row.appendChild(ask);
+    }
 
     if(item.note){
       var noteDiv = document.createElement('div'); noteDiv.className='fu-note'; noteDiv.textContent = item.note;
@@ -10087,6 +10268,7 @@ var kpiImp = { open:false, bundle:null, info:'', msg:'', remote:null, busy:false
 function kpiImpCount(b){
   var bt = b && b.boardTemplate, qc = b && b.quizContent, parts = [];
   if(bt) ['plan','year','work'].forEach(function(k){ if(bt[k] && Array.isArray(bt[k].items)) parts.push('доска «'+k+'»: '+bt[k].items.length+' элементов'); });
+  if(b && b.config && Array.isArray(b.config.holders)) parts.push('настройки: список «кто ведёт» ('+b.config.holders.length+')');
   if(qc && Array.isArray(qc.legs)) parts.push('тест: '+qc.legs.length+' рейсов, '+qc.legs.reduce(function(a,l){ return a+((l.qs||[]).length); },0)+' вопросов');
   return parts.join(' · ');
 }
@@ -10137,6 +10319,10 @@ async function kpiImpSave(){
       await setDoc(doc(db,'privateContent','boardTemplate'), Object.assign(bt, who));
       bTplCache = null;
     }
+    if(b.config && Array.isArray(b.config.holders)){
+      await setDoc(doc(db,'privateContent','config'), Object.assign({ json: JSON.stringify(b.config) }, who));
+      maxConfigLoaded = false; maxConfig = { holders: [] };
+    }
     if(b.quizContent && Array.isArray(b.quizContent.legs)){
       await setDoc(doc(db,'privateContent','quizContent'), Object.assign({ legs: JSON.stringify(b.quizContent.legs) }, who));
     }
@@ -10174,7 +10360,7 @@ function kpiConfOf(c){
     lvMin: kNum(c.lvMin) != null ? kNum(c.lvMin) : 50, lvPlan: kNum(c.lvPlan) != null ? kNum(c.lvPlan) : 100, lvExcl: kNum(c.lvExcl) != null ? kNum(c.lvExcl) : 120,
     gateAcc: c.gateAcc === undefined ? 80 : kNum(c.gateAcc),
     firstProrate: c.firstProrate !== false,
-    fuDays: kNum(c.fuDays) != null ? kNum(c.fuDays) : 3, fuLimit: kNum(c.fuLimit) != null ? kNum(c.fuLimit) : 3,
+    fuDays: kNum(c.fuDays) != null ? kNum(c.fuDays) : 4, fuLimit: kNum(c.fuLimit) != null ? kNum(c.fuLimit) : 3,
     liveMin: kNum(c.liveMin) != null && kNum(c.liveMin) >= 2 ? kNum(c.liveMin) : 2,
     livePre: c.livePre === true,
     minN: kNum(c.minN) != null ? kNum(c.minN) : 10,
@@ -11122,7 +11308,7 @@ function kpiOnChange(e){
     if(key === 'absences'){ kpiSave({ absences: (v || '').split(/[\s,;]+/).filter(function(x){ return /^\d{4}-\d{2}-\d{2}(\.\.\d{4}-\d{2}-\d{2})?$/.test(x); }) }); return; }
     if(key === 'holidays'){ kpiSave({ holidays: kpiParseHolidays(v) }); return; }
     if(key === 'firstProrate'){ kpiSave({ firstProrate: !!v }); return; }
-    if(key === 'fuDays' || key === 'fuLimit'){ var of = {}; of[key] = kNum(v) == null ? 3 : kNum(v); kpiSave(of); return; }
+    if(key === 'fuDays' || key === 'fuLimit'){ var of = {}; of[key] = kNum(v) == null ? (key === 'fuDays' ? 4 : 3) : kNum(v); kpiSave(of); return; }
     if(key === 'authorOnly'){ kpiSave({ authorOnly: !!v }); return; }
     if(key === 'unattr'){ kpiSave({ unattr: !!v }); return; }
     if(key === 'minN'){ kpiSave({ minN: Math.max(1, kNum(v) == null ? 10 : kNum(v)) }); return; }
