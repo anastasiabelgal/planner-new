@@ -622,6 +622,9 @@
   .max-company-group{margin-bottom:18px;}
   .max-company-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:13px;margin-bottom:8px;color:var(--navy);cursor:pointer;}
   .mct-chip{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:var(--panel-soft);color:var(--text);border:1px solid var(--border);vertical-align:middle;}
+  .mct-ctl{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:10px;vertical-align:middle;font-weight:500;}
+  .mct-ctl select,.mct-ctl input{font-size:11px;padding:2px 6px;height:24px;border-radius:8px;border:1px solid var(--border);background:var(--panel-soft);color:var(--text);}
+  .mct-ctl input{min-width:150px;}
   .mct-chip.agency{background:rgba(239,155,61,.18);} .mct-chip.inhouse{background:rgba(63,174,127,.18);} .mct-chip.holder{background:rgba(0,97,255,.12);}
   .max-ch-sec{border-left:3px solid var(--border);padding:4px 0 4px 10px;margin:6px 0;border-radius:2px;}
   .max-ch-sec.ch-green{border-left-color:#3fae7f;background:rgba(63,174,127,.10);} .max-ch-sec.ch-red{border-left-color:#dd5c56;background:rgba(221,92,86,.10);} .max-ch-sec.ch-blue{border-left-color:#0061ff;background:rgba(0,97,255,.07);}
@@ -632,6 +635,12 @@
   .max-ch-ctl select,.max-ch-ctl input[type=date]{font-size:11px;padding:2px 4px;}
   .max-ch-ctl label{display:flex;align-items:center;gap:4px;} .max-ch-fu{font-size:10.5px;}
   .max-ch-warn{margin:2px 0 4px;font-size:10.5px;font-weight:700;color:#8a6a00;}
+  .assign-banner{background:linear-gradient(150deg,#e5484d,#b3261e);color:#fff;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:13px;font-weight:600;}
+  .assign-banner .ab-row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;}
+  .assign-banner .ab-list{margin:6px 0 0;padding-left:18px;font-weight:500;font-size:12.5px;}
+  .assign-banner button{height:30px;padding:0 12px;border-radius:8px;border:1px solid rgba(255,255,255,.6);background:rgba(255,255,255,.15);color:#fff;font-weight:700;cursor:pointer;margin-left:6px;}
+  .fu-who{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font-size:10.5px;}
+  .fu-who select{font-size:10.5px;padding:1px 4px;}
   .fu-next{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;}
   .fu-ch{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:var(--panel-soft);border:1px solid var(--border);}
   .max-company-title:hover{text-decoration:underline;}
@@ -1471,6 +1480,7 @@
   <div id="deadline-banner" class="notif-banner deadline-banner hidden"></div>
   <div id="kpi-banner" class="notif-banner hidden"></div>
   <div id="viewas-banner" class="notif-banner hidden"></div>
+  <div id="assign-banner" class="assign-banner hidden"></div>
 
   <div id="cal-overlay" class="cal-overlay hidden">
     <div class="cal-panel">
@@ -2104,6 +2114,7 @@
         <button class="icon-btn" id="max-followup-prev-btn">‹</button>
         <span id="max-followup-month-label" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:16px;">—</span>
         <button class="icon-btn" id="max-followup-next-btn">›</button>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;margin-left:12px;"><input type="checkbox" id="max-followup-mine"> только мои</label>
       </div>
       <div class="cal-grid" id="max-followup-grid" style="max-width:640px;"></div>
     </div>
@@ -2118,6 +2129,7 @@
         <div class="add-debt-box" style="margin-top:14px;">
           <div class="row2">
             <input id="max-followup-add-name" type="text" placeholder="Имя Фамилия">
+            <select id="max-followup-add-assignee" title="Кому назначить"></select>
           </div>
           <textarea id="max-followup-add-note" placeholder="Комментарий (необязательно)" style="width:100%;height:50px;resize:vertical;background:var(--panel-soft);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:12.5px;font-family:inherit;color:var(--text);margin-bottom:8px;"></textarea>
           <button class="add-card-submit" id="max-followup-add-btn" style="flex:0 0 auto;width:auto;max-width:160px;">+ На эту дату</button>
@@ -2542,6 +2554,7 @@ function startBoard(){
   subscribeOwnerData();
   if(canSeeMaxTab()){
     subscribeMaxLeads();
+    subscribeMaxNotices();
     subscribeMaxReminders();
     subscribeMaxCalls();
     subscribeMaxCompanies();
@@ -8120,9 +8133,21 @@ function subscribeMaxCompanies(){
     maxCompanies = [];
     snap.forEach(function(d){ maxCompanies.push(Object.assign({id:d.id}, d.data())); });
     if(maxCompanyOverlayName && !el('max-company-overlay').classList.contains('hidden')) renderMaxCompanyOverlay();
+    var ae = document.activeElement;
+    if(typeof renderMaxLeadsView === 'function' && !(ae && ae.closest && ae.closest('.mct-ctl'))){ try{ renderMaxLeadsView(); }catch(e){} }
   }, function(err){ console.error('maxCompanies err', err); });
 }
 
+var COMPANY_MODELS = ['Агентство', 'Инхаус', 'Инхаус + агентство'];
+function modelHasAgency(m){ return m === 'Агентство' || m === 'Инхаус + агентство'; }
+function modelHasInhouse(m){ return m === 'Инхаус' || m === 'Инхаус + агентство'; }
+// Записать поля компании (профиль создаётся, если его ещё нет)
+function maxCompanySet(name, fields){
+  var existing = getMaxCompanyProfile(name);
+  var payload = Object.assign({}, fields, { updatedAt: serverTimestamp() });
+  if(existing) return updateDoc(doc(db,'maxCompanies',existing.id), payload);
+  return addDoc(collection(db,'maxCompanies'), Object.assign({ name: name }, payload));
+}
 function getMaxCompanyProfile(name){
   return maxCompanies.filter(function(c){ return c.name === name; })[0] || null;
 }
@@ -8156,8 +8181,8 @@ function renderMaxCompanyOverlay(){
 
     var modelWrap = document.createElement('div'); modelWrap.className='max-company-field';
     var modelText = profile.workModel || '—';
-    if(profile.workModel === 'Агентство' && profile.agencyPartner) modelText += ' — '+profile.agencyPartner;
-    if(profile.workModel === 'Инхаус' && profile.inhouseNote) modelText += ' — '+profile.inhouseNote;
+    if(modelHasAgency(profile.workModel) && profile.agencyPartner) modelText += ' — агентство: '+profile.agencyPartner;
+    if(modelHasInhouse(profile.workModel) && profile.inhouseNote) modelText += ' — инхаус: '+profile.inhouseNote;
     modelWrap.innerHTML = '<div class="mcf-label">Модель работы</div><div class="mcf-val">'+modelText+'</div>';
     content.appendChild(modelWrap);
 
@@ -8195,14 +8220,14 @@ function renderMaxCompanyOverlay(){
     var modelWrap2 = document.createElement('div'); modelWrap2.className='max-company-field';
     var modelLabel = document.createElement('div'); modelLabel.className='mcf-label'; modelLabel.textContent='Модель работы';
     var modelSel = document.createElement('select');
-    ['', 'Агентство', 'Инхаус'].forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v||'—'; if(v===profile.workModel) o.selected=true; modelSel.appendChild(o); });
+    ['', 'Агентство', 'Инхаус', 'Инхаус + агентство'].forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v||'—'; if(v===profile.workModel) o.selected=true; modelSel.appendChild(o); });
     var agencyInput = document.createElement('input'); agencyInput.type='text'; agencyInput.placeholder='С каким агентством работают'; agencyInput.value = profile.agencyPartner||'';
-    agencyInput.style.marginTop='6px'; agencyInput.style.display = profile.workModel==='Агентство' ? '' : 'none';
+    agencyInput.style.marginTop='6px'; agencyInput.style.display = modelHasAgency(profile.workModel) ? '' : 'none';
     var inhouseInput = document.createElement('input'); inhouseInput.type='text'; inhouseInput.placeholder='Заметка про их внутреннюю команду'; inhouseInput.value = profile.inhouseNote||'';
-    inhouseInput.style.marginTop='6px'; inhouseInput.style.display = profile.workModel==='Инхаус' ? '' : 'none';
+    inhouseInput.style.marginTop='6px'; inhouseInput.style.display = modelHasInhouse(profile.workModel) ? '' : 'none';
     modelSel.addEventListener('change', function(){
-      agencyInput.style.display = modelSel.value==='Агентство' ? '' : 'none';
-      inhouseInput.style.display = modelSel.value==='Инхаус' ? '' : 'none';
+      agencyInput.style.display = modelHasAgency(modelSel.value) ? '' : 'none';
+      inhouseInput.style.display = modelHasInhouse(modelSel.value) ? '' : 'none';
     });
     modelWrap2.appendChild(modelLabel); modelWrap2.appendChild(modelSel); modelWrap2.appendChild(agencyInput); modelWrap2.appendChild(inhouseInput);
     content.appendChild(modelWrap2);
@@ -8431,15 +8456,26 @@ function renderMaxLeadsView(){
     var title = document.createElement('div'); title.className = 'max-company-title'; title.textContent = companyName;
     title.title = 'Клик — открыть карточку компании';
     title.addEventListener('click', function(){ openMaxCompanyCard(companyName); });
-    var cprof = getMaxCompanyProfile(companyName);
-    if(cprof){
-      if(cprof.workModel){
-        var mchip = document.createElement('span'); mchip.className = 'mct-chip '+(cprof.workModel === 'Агентство' ? 'agency' : 'inhouse');
-        mchip.textContent = cprof.workModel + (cprof.workModel === 'Агентство' && cprof.agencyPartner ? ': '+cprof.agencyPartner : (cprof.workModel === 'Инхаус' && cprof.inhouseNote ? ': '+cprof.inhouseNote : ''));
-        title.appendChild(mchip);
-      }
-      if(cprof.holder){ var hchip = document.createElement('span'); hchip.className = 'mct-chip holder'; hchip.textContent = 'Ведёт: '+cprof.holder; title.appendChild(hchip); }
-    }
+    var cprof = getMaxCompanyProfile(companyName) || {};
+    // Модель компании прямо рядом с названием: Агентство / Инхаус / Инхаус + агентство; если есть агентство, рядом поле для его названия
+    var ctl = document.createElement('span'); ctl.className = 'mct-ctl';
+    ctl.addEventListener('click', function(e){ e.stopPropagation(); });
+    var modelSel0 = document.createElement('select'); modelSel0.title = 'Как компания устроена: агентство, инхаус или оба';
+    var mo0 = document.createElement('option'); mo0.value = ''; mo0.textContent = 'Модель…'; modelSel0.appendChild(mo0);
+    COMPANY_MODELS.forEach(function(m){ var o = document.createElement('option'); o.value = m; o.textContent = m; modelSel0.appendChild(o); });
+    modelSel0.value = cprof.workModel || '';
+    ctl.appendChild(modelSel0);
+    var agIn0 = document.createElement('input'); agIn0.type = 'text'; agIn0.placeholder = 'Какое агентство'; agIn0.value = cprof.agencyPartner || '';
+    agIn0.style.display = modelHasAgency(cprof.workModel) ? '' : 'none';
+    ctl.appendChild(agIn0);
+    modelSel0.addEventListener('change', function(){
+      agIn0.style.display = modelHasAgency(modelSel0.value) ? '' : 'none';
+      maxCompanySet(companyName, { workModel: modelSel0.value });
+      if(modelHasAgency(modelSel0.value)) setTimeout(function(){ agIn0.focus(); }, 50);
+    });
+    agIn0.addEventListener('change', function(){ maxCompanySet(companyName, { agencyPartner: agIn0.value.trim() }); });
+    title.appendChild(ctl);
+    if(cprof.holder){ var hchip = document.createElement('span'); hchip.className = 'mct-chip holder'; hchip.textContent = 'Ведёт: '+cprof.holder; title.appendChild(hchip); }
     groupDiv.appendChild(title);
 
     group.forEach(function(lead){
@@ -8581,6 +8617,7 @@ function renderMaxLeadsView(){
         // Дата назначения встречи нужна отдельно от даты проведения: по ней считаются «назначено», по дате звонка «проведено»
         if(statusSel.value === 'Call scheduled' && !lead.scheduledDate) upd.scheduledDate = todayStr3;
         updateDoc(doc(db,'maxLeads',lead.id), touchLead(upd));
+        if(lead.assignee) maxNotify(lead.assignee, 'status', maxPersonName(maxMe())+' обновил(а) статус: '+(lead.companyName || '')+(lead.contactName ? ', '+lead.contactName : '')+' → '+statusSel.value, { leadId: lead.id });
       });
       var stageSel = document.createElement('select');
       MAX_STAGES.forEach(function(s){ var o=document.createElement('option'); o.value=s; o.textContent=s; if(s===lead.stage) o.selected=true; stageSel.appendChild(o); });
@@ -8596,7 +8633,14 @@ function renderMaxLeadsView(){
       var listSel = document.createElement('select'); listSel.title = 'Чей список: Wrong ICP этого лида не идёт в KPI сотрудника, если список от Анастасии';
       [['sdr','Ресёрч SDR'],['nastya','Список от Анастасии']].forEach(function(o){ var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if((lead.listSource || 'sdr') === o[0]) op.selected = true; listSel.appendChild(op); });
       listSel.addEventListener('change', function(){ updateDoc(doc(db,'maxLeads',lead.id), touchLead({ listSource: listSel.value })); });
-      selectsRow.appendChild(segSel); selectsRow.appendChild(statusSel); selectsRow.appendChild(stageSel); selectsRow.appendChild(touchSel); selectsRow.appendChild(listSel);
+      var respSel = document.createElement('select'); respSel.title = 'Ответственный за лид: ему приходит красная плашка при назначении и при смене статуса';
+      maxFillPeopleSelect(respSel, lead.assignee, 'Ответственный…');
+      respSel.addEventListener('change', function(){
+        var to = respSel.value;
+        updateDoc(doc(db,'maxLeads',lead.id), touchLead({ assignee: to, assigneeChangedDate: new Date().toISOString().slice(0,10) }));
+        if(to) maxNotify(to, 'lead', maxPersonName(maxMe())+' назначил(а) тебе лид: '+(lead.companyName || '')+(lead.contactName ? ', '+lead.contactName : ''), { leadId: lead.id });
+      });
+      selectsRow.appendChild(segSel); selectsRow.appendChild(statusSel); selectsRow.appendChild(stageSel); selectsRow.appendChild(touchSel); selectsRow.appendChild(listSel); selectsRow.appendChild(respSel);
       main.appendChild(selectsRow);
 
       if(lead.status === 'Agency'){
@@ -8969,6 +9013,61 @@ function mrEvt(type, extra){
   return Object.assign({ t:new Date().toISOString(), d:mrToday(), by:(currentUser && currentUser.email) || '', type:type }, extra || {});
 }
 
+/* ---------- Назначения и уведомления (Лидогенерация) ---------- */
+var maxNotices = [], unsubMaxNotices = null, maxFuMine = false;
+function maxMe(){ return ((currentUser && currentUser.email) || '').toLowerCase(); }
+function maxPeople(){
+  var emails = [NASTYA_EMAIL, MAX_EMAIL].concat(SDR_EMAILS).map(function(e){ return String(e).toLowerCase(); });
+  return emails.map(function(e){
+    var u = (typeof knownUsers !== 'undefined' ? knownUsers : []).filter(function(x){ return (x.email || '').toLowerCase() === e; })[0];
+    return { email: e, name: u ? u.displayName : e.split('@')[0] };
+  });
+}
+function maxPersonName(email){ var e = String(email || '').toLowerCase(), p = maxPeople().filter(function(x){ return x.email === e; })[0]; return p ? p.name : (e ? e.split('@')[0] : ''); }
+function maxFillPeopleSelect(sel, current, emptyLabel){
+  sel.innerHTML = '';
+  var o0 = document.createElement('option'); o0.value = ''; o0.textContent = emptyLabel; sel.appendChild(o0);
+  maxPeople().forEach(function(p){ var o = document.createElement('option'); o.value = p.email; o.textContent = p.name; sel.appendChild(o); });
+  sel.value = current || '';
+}
+// Уведомление сотруднику: красная плашка у него сверху, пока не нажмёт «Понятно»
+function maxNotify(to, kind, text, extra){
+  to = String(to || '').toLowerCase();
+  if(!to || to === maxMe()) return Promise.resolve();
+  return addDoc(collection(db,'maxNotices'), Object.assign({ to: to, from: maxMe(), fromName: maxPersonName(maxMe()), kind: kind, text: text, seen: false, createdAt: serverTimestamp() }, extra || {}));
+}
+function subscribeMaxNotices(){
+  if(unsubMaxNotices){ unsubMaxNotices(); unsubMaxNotices = null; }
+  var me = maxMe(); if(!me) return;
+  unsubMaxNotices = onSnapshot(query(collection(db,'maxNotices'), where('to','==',me), where('seen','==',false)), function(snap){
+    maxNotices = [];
+    snap.forEach(function(d){ maxNotices.push(Object.assign({ id:d.id }, d.data())); });
+    maxNotices.sort(function(a,b){ return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
+    renderAssignBanner();
+  }, function(err){ console.error('maxNotices err', err); });
+}
+function renderAssignBanner(){
+  var b = el('assign-banner'); if(!b) return;
+  if(!maxNotices.length){ b.classList.add('hidden'); b.innerHTML = ''; return; }
+  var items = maxNotices.slice(0, 4).map(function(n){ return '<li>'+kE(n.text || '')+'</li>'; }).join('');
+  b.innerHTML = '<div class="ab-row"><span>Новое от коллег: '+maxNotices.length+'</span><span><button data-ab="open">Открыть</button><button data-ab="seen">Понятно</button></span></div><ul class="ab-list">'+items+(maxNotices.length > 4 ? '<li>…</li>' : '')+'</ul>';
+  b.classList.remove('hidden');
+}
+function initAssignBanner(){
+  var b = el('assign-banner'); if(!b) return;
+  b.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('button[data-ab]') : null; if(!t) return;
+    if(t.dataset.ab === 'seen' || t.dataset.ab === 'open'){
+      var first = maxNotices[0];
+      if(t.dataset.ab === 'open'){
+        var tabBtn = document.querySelector('.tab-btn[data-tab="maxsection"]'); if(tabBtn) tabBtn.click();
+        var sub = document.querySelector('#tab-maxsection .subtab-btn[data-subtab="'+((first && first.kind === 'task') ? 'followup' : 'leads')+'"]'); if(sub) sub.click();
+      }
+      maxNotices.slice().forEach(function(n){ updateDoc(doc(db,'maxNotices',n.id), { seen:true, seenAt: serverTimestamp() }); });
+    }
+  });
+}
+
 /* ---------- Каналы (LinkedIn, почта, WhatsApp) и follow-up по рабочим дням ---------- */
 var MAX_CHANNELS = [{key:'linkedin',label:'LinkedIn'},{key:'email',label:'Почта'},{key:'whatsapp',label:'WhatsApp'}];
 var CH_STATUSES = [{key:'',label:'Статус канала'},{key:'unread',label:'Без прочтения',cls:''},{key:'noreply',label:'Нет ответа',cls:'ch-red'},{key:'replying',label:'Отвечает',cls:'ch-green'},{key:'tocall',label:'Вывод на звонок',cls:'ch-blue'}];
@@ -9025,7 +9124,7 @@ function mrUpsertChannel(lead, ch, date, followupNo){
   others = mrOtherOpenDates(lead.id, null).concat([date]);
   return addDoc(collection(db,'maxReminders'), {
     name: lead.contactName || lead.companyName, note: 'Follow-up · '+mrChLabel(ch), date: date, origDate: date,
-    done: false, leadId: lead.id, channel: ch, followupNo: followupNo || 1, autoChannel: true,
+    done: false, leadId: lead.id, channel: ch, followupNo: followupNo || 1, autoChannel: true, assignee: lead.assignee || '',
     authorEmail: (currentUser && currentUser.email) || '', createdAt: serverTimestamp(),
     history: [mrEvt('created', { to: date })]
   }).then(function(){ return mrSetLeadNext(lead.id, others); });
@@ -9094,7 +9193,7 @@ function softDeleteMaxReminder(item){
 function getMaxFollowupItemsForDate(dateObj){
   var pad2 = function(n){ return String(n).padStart(2,'0'); };
   var dateStr = dateObj.getFullYear()+'-'+pad2(dateObj.getMonth()+1)+'-'+pad2(dateObj.getDate());
-  return maxReminders.filter(function(r){ return r.date === dateStr; });
+  return maxReminders.filter(function(r){ return r.date === dateStr && (!maxFuMine || (r.assignee || '').toLowerCase() === maxMe()); });
 }
 
 function renderMaxFollowupMonth(){
@@ -9131,6 +9230,7 @@ function openMaxFollowupDayOverlay(dateObj){
   el('max-followup-day-overlay').classList.remove('hidden');
   el('max-followup-add-name').value = '';
   el('max-followup-add-note').value = '';
+  maxFillPeopleSelect(el('max-followup-add-assignee'), '', 'Кому: не назначено');
   renderMaxFollowupDayDetail();
 }
 function closeMaxFollowupDayOverlay(){
@@ -9205,6 +9305,17 @@ function renderMaxFollowupDayDetail(){
         softDeleteMaxReminder(item).then(function(){ renderMaxFollowupDayDetail(); });
       }
     });
+    var who = document.createElement('span'); who.className = 'fu-who';
+    var whoSel = document.createElement('select'); whoSel.title = 'Кому назначено';
+    maxFillPeopleSelect(whoSel, item.assignee, 'Не назначено');
+    whoSel.addEventListener('click', function(e){ e.stopPropagation(); });
+    whoSel.addEventListener('change', function(){
+      var to = whoSel.value;
+      updateDoc(doc(db,'maxReminders',item.id), { assignee: to, history: arrayUnion(mrEvt('assign', { to: to })) });
+      if(to) maxNotify(to, 'task', maxPersonName(maxMe())+' назначил(а) тебе задачу: '+(item.name || '')+(item.note ? ' · '+item.note : '')+' · '+(item.date || ''), { reminderId: item.id });
+    });
+    who.appendChild(document.createTextNode('Кому: ')); who.appendChild(whoSel);
+    actions.appendChild(who);
     actions.appendChild(editBtn); actions.appendChild(delBtn);
     row.appendChild(actions);
     detail.appendChild(row);
@@ -9223,6 +9334,7 @@ function initMaxFollowup(){
     renderMaxFollowupMonth();
   });
   el('max-followup-day-close-btn').addEventListener('click', closeMaxFollowupDayOverlay);
+  el('max-followup-mine').addEventListener('change', function(){ maxFuMine = this.checked; renderMaxFollowupMonth(); if(maxFollowupSelectedDate) renderMaxFollowupDayDetail(); });
   el('max-followup-day-overlay').addEventListener('click', function(e){ if(e.target === el('max-followup-day-overlay')) closeMaxFollowupDayOverlay(); });
 
   el('max-followup-add-btn').addEventListener('click', function(){
@@ -9231,10 +9343,12 @@ function initMaxFollowup(){
     var note = el('max-followup-add-note').value.trim();
     var pad2 = function(n){ return String(n).padStart(2,'0'); };
     var dateStr = maxFollowupSelectedDate.getFullYear()+'-'+pad2(maxFollowupSelectedDate.getMonth()+1)+'-'+pad2(maxFollowupSelectedDate.getDate());
+    var addTo = el('max-followup-add-assignee').value;
     addDoc(collection(db,'maxReminders'), {
       name: name, note: note, date: dateStr, origDate: dateStr, done: false, authorEmail: currentUser.email, createdAt: serverTimestamp(),
-      history: [mrEvt('created', { to: dateStr })]
-    }).then(function(){
+      assignee: addTo, history: [mrEvt('created', { to: dateStr })]
+    }).then(function(ref){
+      if(addTo) maxNotify(addTo, 'task', maxPersonName(maxMe())+' назначил(а) тебе задачу: '+name+(note ? ' · '+note : '')+' · '+dateStr, { reminderId: ref && ref.id });
       el('max-followup-add-name').value=''; el('max-followup-add-note').value='';
       renderMaxFollowupDayDetail();
     });
@@ -11638,6 +11752,7 @@ initMaxLeads();
 initMaxCompanies();
 initAutostats();
 initMaxFollowup();
+initAssignBanner();
 initMaxCalls();
 initMaxSubtabs();
 initMaxReport();
