@@ -622,6 +622,9 @@
   .max-company-group{margin-bottom:18px;}
   .max-company-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:13px;margin-bottom:8px;color:var(--navy);cursor:pointer;}
   .mct-chip{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:var(--panel-soft);color:var(--text);border:1px solid var(--border);vertical-align:middle;}
+  .mct-ctl{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:10px;vertical-align:middle;font-weight:500;}
+  .mct-ctl select,.mct-ctl input{font-size:11px;padding:2px 6px;height:24px;border-radius:8px;border:1px solid var(--border);background:var(--panel-soft);color:var(--text);}
+  .mct-ctl input{min-width:150px;}
   .mct-chip.agency{background:rgba(239,155,61,.18);} .mct-chip.inhouse{background:rgba(63,174,127,.18);} .mct-chip.holder{background:rgba(0,97,255,.12);}
   .max-ch-sec{border-left:3px solid var(--border);padding:4px 0 4px 10px;margin:6px 0;border-radius:2px;}
   .max-ch-sec.ch-green{border-left-color:#3fae7f;background:rgba(63,174,127,.10);} .max-ch-sec.ch-red{border-left-color:#dd5c56;background:rgba(221,92,86,.10);} .max-ch-sec.ch-blue{border-left-color:#0061ff;background:rgba(0,97,255,.07);}
@@ -8130,9 +8133,21 @@ function subscribeMaxCompanies(){
     maxCompanies = [];
     snap.forEach(function(d){ maxCompanies.push(Object.assign({id:d.id}, d.data())); });
     if(maxCompanyOverlayName && !el('max-company-overlay').classList.contains('hidden')) renderMaxCompanyOverlay();
+    var ae = document.activeElement;
+    if(typeof renderMaxLeadsView === 'function' && !(ae && ae.closest && ae.closest('.mct-ctl'))){ try{ renderMaxLeadsView(); }catch(e){} }
   }, function(err){ console.error('maxCompanies err', err); });
 }
 
+var COMPANY_MODELS = ['Агентство', 'Инхаус', 'Инхаус + агентство'];
+function modelHasAgency(m){ return m === 'Агентство' || m === 'Инхаус + агентство'; }
+function modelHasInhouse(m){ return m === 'Инхаус' || m === 'Инхаус + агентство'; }
+// Записать поля компании (профиль создаётся, если его ещё нет)
+function maxCompanySet(name, fields){
+  var existing = getMaxCompanyProfile(name);
+  var payload = Object.assign({}, fields, { updatedAt: serverTimestamp() });
+  if(existing) return updateDoc(doc(db,'maxCompanies',existing.id), payload);
+  return addDoc(collection(db,'maxCompanies'), Object.assign({ name: name }, payload));
+}
 function getMaxCompanyProfile(name){
   return maxCompanies.filter(function(c){ return c.name === name; })[0] || null;
 }
@@ -8166,8 +8181,8 @@ function renderMaxCompanyOverlay(){
 
     var modelWrap = document.createElement('div'); modelWrap.className='max-company-field';
     var modelText = profile.workModel || '—';
-    if(profile.workModel === 'Агентство' && profile.agencyPartner) modelText += ' — '+profile.agencyPartner;
-    if(profile.workModel === 'Инхаус' && profile.inhouseNote) modelText += ' — '+profile.inhouseNote;
+    if(modelHasAgency(profile.workModel) && profile.agencyPartner) modelText += ' — агентство: '+profile.agencyPartner;
+    if(modelHasInhouse(profile.workModel) && profile.inhouseNote) modelText += ' — инхаус: '+profile.inhouseNote;
     modelWrap.innerHTML = '<div class="mcf-label">Модель работы</div><div class="mcf-val">'+modelText+'</div>';
     content.appendChild(modelWrap);
 
@@ -8205,14 +8220,14 @@ function renderMaxCompanyOverlay(){
     var modelWrap2 = document.createElement('div'); modelWrap2.className='max-company-field';
     var modelLabel = document.createElement('div'); modelLabel.className='mcf-label'; modelLabel.textContent='Модель работы';
     var modelSel = document.createElement('select');
-    ['', 'Агентство', 'Инхаус'].forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v||'—'; if(v===profile.workModel) o.selected=true; modelSel.appendChild(o); });
+    ['', 'Агентство', 'Инхаус', 'Инхаус + агентство'].forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v||'—'; if(v===profile.workModel) o.selected=true; modelSel.appendChild(o); });
     var agencyInput = document.createElement('input'); agencyInput.type='text'; agencyInput.placeholder='С каким агентством работают'; agencyInput.value = profile.agencyPartner||'';
-    agencyInput.style.marginTop='6px'; agencyInput.style.display = profile.workModel==='Агентство' ? '' : 'none';
+    agencyInput.style.marginTop='6px'; agencyInput.style.display = modelHasAgency(profile.workModel) ? '' : 'none';
     var inhouseInput = document.createElement('input'); inhouseInput.type='text'; inhouseInput.placeholder='Заметка про их внутреннюю команду'; inhouseInput.value = profile.inhouseNote||'';
-    inhouseInput.style.marginTop='6px'; inhouseInput.style.display = profile.workModel==='Инхаус' ? '' : 'none';
+    inhouseInput.style.marginTop='6px'; inhouseInput.style.display = modelHasInhouse(profile.workModel) ? '' : 'none';
     modelSel.addEventListener('change', function(){
-      agencyInput.style.display = modelSel.value==='Агентство' ? '' : 'none';
-      inhouseInput.style.display = modelSel.value==='Инхаус' ? '' : 'none';
+      agencyInput.style.display = modelHasAgency(modelSel.value) ? '' : 'none';
+      inhouseInput.style.display = modelHasInhouse(modelSel.value) ? '' : 'none';
     });
     modelWrap2.appendChild(modelLabel); modelWrap2.appendChild(modelSel); modelWrap2.appendChild(agencyInput); modelWrap2.appendChild(inhouseInput);
     content.appendChild(modelWrap2);
@@ -8441,15 +8456,26 @@ function renderMaxLeadsView(){
     var title = document.createElement('div'); title.className = 'max-company-title'; title.textContent = companyName;
     title.title = 'Клик — открыть карточку компании';
     title.addEventListener('click', function(){ openMaxCompanyCard(companyName); });
-    var cprof = getMaxCompanyProfile(companyName);
-    if(cprof){
-      if(cprof.workModel){
-        var mchip = document.createElement('span'); mchip.className = 'mct-chip '+(cprof.workModel === 'Агентство' ? 'agency' : 'inhouse');
-        mchip.textContent = cprof.workModel + (cprof.workModel === 'Агентство' && cprof.agencyPartner ? ': '+cprof.agencyPartner : (cprof.workModel === 'Инхаус' && cprof.inhouseNote ? ': '+cprof.inhouseNote : ''));
-        title.appendChild(mchip);
-      }
-      if(cprof.holder){ var hchip = document.createElement('span'); hchip.className = 'mct-chip holder'; hchip.textContent = 'Ведёт: '+cprof.holder; title.appendChild(hchip); }
-    }
+    var cprof = getMaxCompanyProfile(companyName) || {};
+    // Модель компании прямо рядом с названием: Агентство / Инхаус / Инхаус + агентство; если есть агентство, рядом поле для его названия
+    var ctl = document.createElement('span'); ctl.className = 'mct-ctl';
+    ctl.addEventListener('click', function(e){ e.stopPropagation(); });
+    var modelSel0 = document.createElement('select'); modelSel0.title = 'Как компания устроена: агентство, инхаус или оба';
+    var mo0 = document.createElement('option'); mo0.value = ''; mo0.textContent = 'Модель…'; modelSel0.appendChild(mo0);
+    COMPANY_MODELS.forEach(function(m){ var o = document.createElement('option'); o.value = m; o.textContent = m; modelSel0.appendChild(o); });
+    modelSel0.value = cprof.workModel || '';
+    ctl.appendChild(modelSel0);
+    var agIn0 = document.createElement('input'); agIn0.type = 'text'; agIn0.placeholder = 'Какое агентство'; agIn0.value = cprof.agencyPartner || '';
+    agIn0.style.display = modelHasAgency(cprof.workModel) ? '' : 'none';
+    ctl.appendChild(agIn0);
+    modelSel0.addEventListener('change', function(){
+      agIn0.style.display = modelHasAgency(modelSel0.value) ? '' : 'none';
+      maxCompanySet(companyName, { workModel: modelSel0.value });
+      if(modelHasAgency(modelSel0.value)) setTimeout(function(){ agIn0.focus(); }, 50);
+    });
+    agIn0.addEventListener('change', function(){ maxCompanySet(companyName, { agencyPartner: agIn0.value.trim() }); });
+    title.appendChild(ctl);
+    if(cprof.holder){ var hchip = document.createElement('span'); hchip.className = 'mct-chip holder'; hchip.textContent = 'Ведёт: '+cprof.holder; title.appendChild(hchip); }
     groupDiv.appendChild(title);
 
     group.forEach(function(lead){
