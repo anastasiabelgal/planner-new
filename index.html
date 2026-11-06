@@ -626,6 +626,13 @@
   .mct-ctl select,.mct-ctl input{font-size:11px;padding:2px 6px;height:24px;border-radius:8px;border:1px solid var(--border);background:var(--panel-soft);color:var(--text);}
   .mct-ctl input{min-width:150px;}
   .mct-chip.agency{background:rgba(239,155,61,.18);} .mct-chip.inhouse{background:rgba(63,174,127,.18);} .mct-chip.holder{background:rgba(0,97,255,.12);}
+  #max-import-body table{border-collapse:collapse;width:100%;font-size:11.5px;margin-top:8px;}
+  #max-import-body th,#max-import-body td{border:1px solid var(--border);padding:3px 6px;text-align:left;vertical-align:top;}
+  #max-import-body td.imp-new{color:#1a7f37;font-weight:600;white-space:nowrap;}
+  #max-import-body td.imp-upd{color:#9a6700;font-weight:600;white-space:nowrap;}
+  #max-import-body td.imp-skip{color:var(--muted);white-space:nowrap;}
+  #max-import-body .imp-map{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;}
+  #max-import-body .imp-map select{font-size:11px;padding:2px 4px;}
   .max-ch-sec{border-left:3px solid var(--border);padding:4px 0 4px 10px;margin:6px 0;border-radius:2px;}
   .max-ch-sec.ch-green{border-left-color:#3fae7f;background:rgba(63,174,127,.10);} .max-ch-sec.ch-red{border-left-color:#dd5c56;background:rgba(221,92,86,.10);} .max-ch-sec.ch-blue{border-left-color:#0061ff;background:rgba(0,97,255,.07);}
   .max-ch-sec.ch-warn{border-left-color:#e0b400;background:rgba(239,200,61,.20);}
@@ -2059,6 +2066,15 @@
       <div class="company-bar" id="max-sender-filter" style="margin-bottom:12px;"></div>
       <div id="max-status-filter-label"></div>
       <div id="max-leads-container"></div>
+      <div class="add-debt-box" id="max-import-card" style="margin-top:14px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <b style="font-size:13px;">📥 Загрузить контакты из Excel / CSV</b>
+          <button type="button" class="btn-secondary" id="max-import-pick">Выбрать файл</button>
+          <input type="file" id="max-import-file" accept=".xlsx,.xls,.csv" class="hidden">
+          <span class="hint" style="font-size:11px;color:var(--muted);">Колонки: компания, имя и фамилия, должность, почты, телефоны. Найденные лиды (по компании + имени) только дополняются пустыми полями, ничего не затирается.</span>
+        </div>
+        <div id="max-import-body" class="hidden" style="margin-top:10px;"></div>
+      </div>
       <div class="add-debt-box" style="margin-top:14px;">
         <div class="row2">
           <input id="max-lead-company" type="text" placeholder="Компания">
@@ -8999,6 +9015,164 @@ function initMaxLeads(){
   });
   el('max-company-search').addEventListener('input', function(){ renderMaxLeadsView(); });
   el('max-name-search').addEventListener('input', function(){ renderMaxLeadsView(); });
+  initMaxImport();
+}
+
+/* ---------- Импорт контактов из Excel / CSV ---------- */
+var IMP_FIELDS = [
+  {k:'company', label:'Компания'}, {k:'name', label:'Имя Фамилия (одной колонкой)'},
+  {k:'firstName', label:'Имя'}, {k:'lastName', label:'Фамилия'}, {k:'position', label:'Должность'},
+  {k:'workEmail', label:'Рабочая почта'}, {k:'personalEmail', label:'Личная почта'},
+  {k:'workPhone', label:'Рабочий телефон'}, {k:'personalPhone', label:'Личный телефон'}, {k:'whatsapp', label:'WhatsApp'}
+];
+var IMP_TO_LEAD = { position:'position', workEmail:'workEmail', personalEmail:'personalEmail', workPhone:'workPhone', personalPhone:'personalPhone', whatsapp:'whatsapp' };
+function impGuess(h){
+  var t = String(h || '').toLowerCase().replace(/[_\-.]/g,' ').replace(/\s+/g,' ').trim();
+  if(!t) return '';
+  var personal = /личн|personal|private/.test(t), work = /рабоч|work|business|corporate/.test(t);
+  if(/whatsapp|ватсап|вацап/.test(t)) return 'whatsapp';
+  if(/mail|почт/.test(t)) return personal ? 'personalEmail' : 'workEmail';
+  if(/phone|тел|mobile|моб|cell/.test(t)) return (personal || /mobile|моб|cell/.test(t)) && !work ? 'personalPhone' : 'workPhone';
+  if(/compan|компан|organi[sz]|организ|account|hotel|отель/.test(t)) return 'company';
+  if(/first ?name|^имя$|given/.test(t)) return 'firstName';
+  if(/last ?name|surname|фамил|family/.test(t)) return 'lastName';
+  if(/title|position|job|должност|role/.test(t)) return 'position';
+  if(/^name$|full ?name|contact|фио|имя фамилия|имя и фамилия|person/.test(t)) return 'name';
+  return '';
+}
+function impNorm(x){ return String(x || '').toLowerCase().replace(/[.,]/g,' ').replace(/\s+/g,' ').trim(); }
+function impNameKey(x){ return impNorm(x).split(' ').filter(Boolean).sort().join(' '); }
+function impKey(company, name){ return impNorm(company) + '|' + impNameKey(name); }
+var impState = null;
+
+function initMaxImport(){
+  var pick = el('max-import-pick'), inp = el('max-import-file');
+  if(!pick || !inp) return;
+  pick.addEventListener('click', function(){ inp.value = ''; inp.click(); });
+  inp.addEventListener('change', function(){
+    var f = inp.files && inp.files[0]; if(!f) return;
+    if(typeof XLSX === 'undefined'){ alert('Библиотека для чтения Excel не загрузилась. Обнови страницу (Ctrl+F5).'); return; }
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        var wb = XLSX.read(ev.target.result, {type:'array'});
+        var aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:''});
+        aoa = aoa.filter(function(r){ return r.some(function(c){ return String(c).trim() !== ''; }); });
+        if(aoa.length < 2){ alert('В файле нет строк с данными (нужна строка заголовков и хотя бы одна строка контактов).'); return; }
+        impState = { fileName: f.name, header: aoa[0].map(function(h){ return String(h).trim(); }), rows: aoa.slice(1), map: [] };
+        impState.map = impState.header.map(impGuess);
+        impRender();
+      }catch(e){ console.error(e); alert('Не удалось прочитать файл: '+e.message); }
+    };
+    reader.readAsArrayBuffer(f);
+  });
+}
+function impBuild(){
+  // собирает контакты по текущему сопоставлению колонок
+  var st = impState, out = [], skipped = 0, seen = {};
+  var col = {}; st.map.forEach(function(k, i){ if(k && col[k] === undefined) col[k] = i; });
+  st.rows.forEach(function(r){
+    var g = function(k){ return col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim(); };
+    var company = g('company');
+    var name = g('name') || [g('firstName'), g('lastName')].filter(Boolean).join(' ');
+    if(!company || !name){ skipped++; return; }
+    var rec = { company:company, name:name, fields:{} };
+    Object.keys(IMP_TO_LEAD).forEach(function(k){ var v = g(k); if(v) rec.fields[IMP_TO_LEAD[k]] = v; });
+    var key = impKey(company, name);
+    if(seen[key]){ Object.keys(rec.fields).forEach(function(f){ if(!seen[key].fields[f]) seen[key].fields[f] = rec.fields[f]; }); return; } // дубль в файле: объединяем
+    seen[key] = rec; rec.key = key; out.push(rec);
+  });
+  var existing = {}; maxLeads.forEach(function(l){ existing[impKey(l.companyName, l.contactName)] = l; });
+  out.forEach(function(rec){
+    var lead = existing[rec.key];
+    if(!lead){ rec.action = 'new'; return; }
+    rec.lead = lead; rec.upd = {};
+    Object.keys(rec.fields).forEach(function(f){ if(!String(lead[f] || '').trim()) rec.upd[f] = rec.fields[f]; });
+    rec.action = Object.keys(rec.upd).length ? 'upd' : 'same';
+  });
+  return { recs: out, skipped: skipped };
+}
+function impRender(){
+  var body = el('max-import-body'), st = impState; body.innerHTML = ''; body.classList.remove('hidden');
+  var title = document.createElement('div'); title.style.cssText = 'font-size:12px;margin-bottom:6px;';
+  title.textContent = 'Файл: '+st.fileName+' · строк: '+st.rows.length+'. Проверь, что колонки определились верно:';
+  body.appendChild(title);
+  var map = document.createElement('div'); map.className = 'imp-map';
+  st.header.forEach(function(h, i){
+    var wrap = document.createElement('label'); wrap.textContent = (h || '(без названия)')+' → ';
+    var sel = document.createElement('select');
+    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '— пропустить —'; sel.appendChild(o0);
+    IMP_FIELDS.forEach(function(f){ var o = document.createElement('option'); o.value = f.k; o.textContent = f.label; sel.appendChild(o); });
+    sel.value = st.map[i] || '';
+    sel.addEventListener('change', function(){ st.map[i] = sel.value; impRender(); });
+    wrap.appendChild(sel); map.appendChild(wrap);
+  });
+  body.appendChild(map);
+  var hasCompany = st.map.indexOf('company') >= 0, hasName = st.map.indexOf('name') >= 0 || (st.map.indexOf('firstName') >= 0 || st.map.indexOf('lastName') >= 0);
+  if(!hasCompany || !hasName){
+    var warn = document.createElement('div'); warn.style.cssText = 'color:#b42318;margin-top:8px;font-size:12px;';
+    warn.textContent = 'Нужны хотя бы колонка «Компания» и колонка с именем (или «Имя» + «Фамилия»). Выбери их в списках выше.';
+    body.appendChild(warn); return;
+  }
+  var res = impBuild(), recs = res.recs;
+  var nNew = recs.filter(function(r){ return r.action === 'new'; }).length;
+  var nUpd = recs.filter(function(r){ return r.action === 'upd'; }).length;
+  var nSame = recs.filter(function(r){ return r.action === 'same'; }).length;
+  var sum = document.createElement('div'); sum.style.cssText = 'margin-top:8px;font-size:12px;font-weight:600;';
+  sum.textContent = 'Новых лидов: '+nNew+' · дополнится существующих: '+nUpd+' · без изменений: '+nSame+' · пропущено строк без компании/имени: '+res.skipped;
+  body.appendChild(sum);
+  var tbl = document.createElement('table');
+  var thead = document.createElement('tr');
+  ['Что будет','Компания','Имя','Должность','Рабочая почта','Личная почта','Раб. тел.','Личн. тел.','WhatsApp'].forEach(function(h){ var th = document.createElement('th'); th.textContent = h; thead.appendChild(th); });
+  tbl.appendChild(thead);
+  recs.slice(0, 60).forEach(function(r){
+    var tr = document.createElement('tr');
+    var td0 = document.createElement('td');
+    td0.className = r.action === 'new' ? 'imp-new' : (r.action === 'upd' ? 'imp-upd' : 'imp-skip');
+    td0.textContent = r.action === 'new' ? 'Новый лид' : (r.action === 'upd' ? 'Дополнить: '+Object.keys(r.upd).length+' п.' : 'Уже есть');
+    tr.appendChild(td0);
+    [r.company, r.name, r.fields.position, r.fields.workEmail, r.fields.personalEmail, r.fields.workPhone, r.fields.personalPhone, r.fields.whatsapp].forEach(function(v){ var td = document.createElement('td'); td.textContent = v || ''; tr.appendChild(td); });
+    tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+  if(recs.length > 60){ var more = document.createElement('div'); more.style.cssText = 'font-size:11px;color:var(--muted);margin-top:4px;'; more.textContent = 'Показаны первые 60 из '+recs.length+', применится ко всем.'; body.appendChild(more); }
+  var bar = document.createElement('div'); bar.style.cssText = 'margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+  var apply = document.createElement('button'); apply.type = 'button'; apply.className = "btn-primary"; apply.textContent = 'Применить ('+(nNew+nUpd)+')';
+  apply.disabled = (nNew+nUpd) === 0;
+  var cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = "btn-secondary"; cancel.textContent = 'Отмена';
+  var msg = document.createElement('span'); msg.style.fontSize = '12px';
+  cancel.addEventListener('click', function(){ impState = null; body.classList.add('hidden'); body.innerHTML = ''; });
+  apply.addEventListener('click', function(){
+    apply.disabled = true; cancel.disabled = true; msg.textContent = 'Записываю…';
+    impApply(recs).then(function(n){
+      msg.textContent = '';
+      body.innerHTML = '<div style="font-size:12.5px;font-weight:600;color:#1a7f37;">Готово: создано '+n.created+', дополнено '+n.updated+'. Лиды появились в списке выше.</div>';
+      impState = null;
+    }).catch(function(e){ console.error(e); msg.textContent = 'Ошибка записи: '+e.message; cancel.disabled = false; });
+  });
+  bar.appendChild(apply); bar.appendChild(cancel); bar.appendChild(msg); body.appendChild(bar);
+}
+function impApply(recs){
+  var todayStr = new Date().toISOString().slice(0,10), me = (currentUser && currentUser.email) || '';
+  var order = {}; maxLeads.forEach(function(l){ order[l.companyName] = (order[l.companyName] || 0) + 1; });
+  var created = 0, updated = 0, jobs = [];
+  recs.forEach(function(r){
+    if(r.action === 'upd'){
+      updated++;
+      jobs.push(updateDoc(doc(db,'maxLeads',r.lead.id), Object.assign({}, r.upd, { updatedAt: serverTimestamp() })));
+    } else if(r.action === 'new'){
+      created++;
+      var f = r.fields, ord = order[r.company] || 0; order[r.company] = ord + 1;
+      jobs.push(addDoc(collection(db,'maxLeads'), {
+        companyName:r.company, contactName:r.name, position:f.position || '', sender:'', campaign:'', segment:'', booth:'',
+        workEmail:f.workEmail || '', personalEmail:f.personalEmail || '', workPhone:f.workPhone || '', personalPhone:f.personalPhone || '', whatsapp:f.whatsapp || '',
+        status:'Neutral', statusChangedDate:todayStr, callDate:'', stage:MAX_STAGES[0], stageChangedDate:todayStr, nextContactDate:'', notes:'',
+        firstContactDate:todayStr, touchpoint:'', messages:[], createdBy:me, listSource:'sdr', scheduledDate:'', meetingDate:'',
+        agencyName:'', agencyInfo:'', otherContacts:[], order:ord, createdAt:serverTimestamp(), updatedAt:serverTimestamp()
+      }));
+    }
+  });
+  return Promise.all(jobs).then(function(){ return { created:created, updated:updated }; });
 }
 
 
